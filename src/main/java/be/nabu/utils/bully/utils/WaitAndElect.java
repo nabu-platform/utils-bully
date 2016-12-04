@@ -6,6 +6,7 @@ public class WaitAndElect implements Runnable {
 
 	private BullyClient client;
 	private long timeout;
+	private boolean isElecting;
 
 	public WaitAndElect(BullyClient client, long timeout) {
 		this.client = client;
@@ -24,7 +25,12 @@ public class WaitAndElect implements Runnable {
 			}
 		}
 		if (!interrupted) {
+			isElecting = true;
 			client.elect();
 		}
+	}
+	
+	public boolean isElecting() {
+		return isElecting;
 	}
 }

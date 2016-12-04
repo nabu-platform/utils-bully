@@ -1,13 +1,15 @@
 package be.nabu.utils.bully;
 
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 
+import org.slf4j.Logger;
+
 import be.nabu.libs.http.HTTPException;
-import be.nabu.utils.bully.utils.WaitAndElect;
 
 @Path(value = "/bully")
 public class BullyREST {
@@ -22,15 +24,28 @@ public class BullyREST {
 	private MasterController controller;
 	
 	@Context
-	private Long timeout;
+	private Logger logger;
 	
-	private Thread waitAndElectThread;
+	@GET
+	@Path(value = "/history")
+	public BullyQueryOverview overview() {
+		return client.getHistory();
+	}
+	
+	@POST
+	@Path(value = "/alive")
+	public BullyQueryOverview alive(BullyQuery query) {
+		logger.info("Server '" + query.getHost() + "' is checking in");
+		client.push(query);
+		return client.getHistory();
+	}
 	
 	@POST
 	@Path(value = "/inquiry")
 	@Consumes(value = { MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON })
 	// an incoming query
-	public void query(BullyQuery query) {
+	public void inquiry(BullyQuery query) {
+		logger.info("Inquiry from '" + query.getHost() + "'");
 		if (query.getHost() == null) {
 			throw new HTTPException(400, "Missing host");
 		}
@@ -40,14 +55,13 @@ public class BullyREST {
 		else {
 			int comparison = query.getHost().compareTo(localHost);
 			// the host in the query is higher ranked than this one
+			// let's give him a sec to also send a victory, if not, we restart elections
 			if (comparison > 0) {
-				waitAndElectThread = new Thread(new WaitAndElect(client, timeout == null ? 60*1000 : timeout));
-				waitAndElectThread.start();
+				client.scheduleElection(false);
 			}
 			// the host is ranked lower, start an election immediately
 			else {
-				waitAndElectThread = new Thread(new WaitAndElect(client, 0));
-				waitAndElectThread.start();
+				client.scheduleElection(true);
 			}
 		}
 	}
@@ -56,6 +70,7 @@ public class BullyREST {
 	@Path(value = "/victory")
 	@Consumes(value = { MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON })
 	public void victory(BullyQuery query) {
+		logger.info("Victory from '" + query.getHost() + "'");
 		if (query.getHost() == null) {
 			throw new HTTPException(400, "Missing host");
 		}
@@ -66,15 +81,11 @@ public class BullyREST {
 			int comparison = query.getHost().compareTo(localHost);
 			// the host in the query is higher ranked than this one, it's ok
 			if (comparison > 0) {
-				// interrupt any election still waiting
-				if (waitAndElectThread != null && waitAndElectThread.isAlive()) {
-					waitAndElectThread.interrupt();
-				}
 				controller.setMaster(query.getHost());
 			}
 			else {
-				waitAndElectThread = new Thread(new WaitAndElect(client, 0));
-				waitAndElectThread.start();
+				// a lower level server thinks it can become master, let's put an end to that immediately
+				client.scheduleElection(true);
 				throw new HTTPException(409, "Lower host is proclaiming victory");
 			}
 		}

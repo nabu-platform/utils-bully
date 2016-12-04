@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>be.nabu.utils</groupId>
 	<artifactId>utils-bully</artifactId>
-	<version>1.0-SNAPSHOT</version>
+	<version>${be.nabu.utils-utils-bully-version}</version>
 	<packaging>jar</packaging>
 	<name>utils-bully</name>
 	<url>http://nabu.be</url>
