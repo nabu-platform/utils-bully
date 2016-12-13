@@ -52,6 +52,9 @@ public class BullyREST {
 		else if (query.getHost().equals(localHost)) {
 			throw new HTTPException(500, "Getting messages from same host");
 		}
+		else if (!client.hosts.contains(query.getHost())) {
+			throw new HTTPException(405, "We are not part of the same cluster");
+		}
 		else {
 			int comparison = query.getHost().compareTo(localHost);
 			// the host in the query is higher ranked than this one

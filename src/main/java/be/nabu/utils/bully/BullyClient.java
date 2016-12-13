@@ -48,7 +48,7 @@ import be.nabu.utils.mime.impl.PlainMimeContentPart;
 public class BullyClient {
 
 	private HTTPClient client;
-	private List<String> hosts;
+	List<String> hosts;
 	private Principal principal;
 	private boolean secure;
 	private String host;
@@ -80,26 +80,39 @@ public class BullyClient {
 		this.controller = new MasterController() {
 			@Override
 			public void setMaster(String master) {
-				logger.info("Setting master to '" + master + "'");
-				if (cancelElection()) {
-					currentMaster = master;
-					if (controller != null) {
-						controller.setMaster(master);
-					}
-					// resolve the futures
-					synchronized (futures) {
-						for (MasterFuture future : futures) {
-							future.master = master;
+				synchronized(BullyClient.this) {
+					// reset the current master if we are going for an election
+					// during this time there is no master, we are in limbo
+					if (master == null) {
+						logger.info("Unsetting master");
+						currentMaster = null;
+						if (controller != null) {
+							controller.setMaster(null);
 						}
-						futures.clear();
+						stopHeartbeat();
 					}
-					// make sure we have a heartbeat to the master
-					if (heartBeat == null) {
-						startHeartbeat();
+					else {
+						logger.info("Setting master to '" + master + "'");
+						if (cancelElection()) {
+							// set locally before we set in the controller, that way anyone listening can do isMaster() properly
+							currentMaster = master;
+							if (controller != null) {
+								controller.setMaster(master);
+							}
+							// resolve the futures
+							synchronized (futures) {
+								for (MasterFuture future : futures) {
+									future.master = master;
+								}
+								futures.clear();
+							}
+							// make sure we have a heartbeat to the master
+							startHeartbeat();
+						}
+						else {
+							logger.warn("Could not cancel election, not accepting '" + master + "' as new master");
+						}
 					}
-				}
-				else {
-					logger.warn("Could not cancel election, not accepting '" + master + "' as new master");
 				}
 			}
 		};
@@ -184,6 +197,10 @@ public class BullyClient {
 		}
 	}
 	
+	public Future<String> getMaster() {
+		return new MasterFuture();
+	}
+	
 	public String getHost() {
 		return host;
 	}
@@ -194,13 +211,13 @@ public class BullyClient {
 	
 	// start an election
 	public Future<String> elect() {
-		// reset the current master if we are going for an election
-		currentMaster = null;
-		
 		logger.info("Starting elections");
 		
 		// unset the wait thread, we may need to start a new one
 		waitAndElectThread = null;
+		
+		// unset master while we elect a new one
+		controller.setMaster(null);
 		
 		boolean potentialMasterFound = false;
 		boolean amIMaster = true;
@@ -215,6 +232,9 @@ public class BullyClient {
 				}
 				else if (response.getCode() == 400) {
 					throw new RuntimeException("Received a 400 from the server");
+				}
+				else if (response.getCode() == 405) {
+					logger.error("Host '" + host + "' claims he is not in this cluster");
 				}
 				// we have a new master!
 				// wait for his victory command to properly announce him though
