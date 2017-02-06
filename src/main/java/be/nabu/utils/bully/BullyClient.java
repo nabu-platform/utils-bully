@@ -187,18 +187,27 @@ public class BullyClient {
 				return master;
 			}
 			Date started = new Date();
+			timeout = TimeUnit.MILLISECONDS.convert(timeout, unit);
 			while (new Date().getTime() - started.getTime() < timeout) {
 				if (master != null) {
 					return master;
 				}
-				Thread.sleep(Math.min(timeout - new Date().getTime() - started.getTime(), 25));
+				Thread.sleep(Math.min(timeout - (new Date().getTime() - started.getTime()), 25));
 			}
 			return master;
 		}
 	}
 	
 	public Future<String> getMaster() {
-		return new MasterFuture();
+		MasterFuture future = new MasterFuture();
+		synchronized(futures) {
+			future.master = currentMaster;
+			// await future resolving
+			if (future.master == null) {
+				futures.add(future);
+			}
+		}
+		return future;
 	}
 	
 	public String getHost() {
